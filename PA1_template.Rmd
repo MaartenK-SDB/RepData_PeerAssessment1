@@ -6,20 +6,107 @@ output:
 ---
 
 
+## Loading Libraries
+```{r, echo = TRUE}
+library(dplyr)
+library(ggplot2)
+library(scales)
+
+```
 ## Loading and preprocessing the data
+```{r, echo = TRUE}
+unzip("activity.zip")
+activity <- read.csv("activity.csv")
+activity$date <- as.Date(activity$date)
 
 
+#Filling out the interval to turn it into %H:%M:%S
+activity$interval <- sprintf("%04d", activity$interval)
+activity$interval <- strptime(activity$interval, format = "%H%M")
 
+```
 ## What is mean total number of steps taken per day?
-
-
+```{r, echo = TRUE}
+Summed <- activity %>%
+  group_by(date) %>%
+  summarise(total = sum(steps, na.rm = TRUE))
+ggplot(Summed, aes(x = total)) + geom_histogram() + ggtitle("Distribution of Total Steps")
+meanSteps <- (mean(Summed$total, na.rm= TRUE))
+medianSteps <- (median(Summed$total, na.rm= TRUE))
+Finaltable<- matrix(c("meansteps", "mediansteps", meanSteps, medianSteps), nrow = 2 , ncol = 2)
+print(Finaltable)
+```
 
 ## What is the average daily activity pattern?
+```{r, echo = TRUE}
+AveragedSteps <- activity %>%
+  group_by(interval) %>%
+  summarise(average = mean(steps, na.rm = TRUE))
+with(AveragedSteps, plot(interval, average, type = "l", main = "Average number of steps per Interval"))
+
+#To Calculate the max interval
+maxsteps<-(AveragedSteps[which.max(AveragedSteps$average),])
+#POSIxlt prints weird values, so formatting it back to normal characters
+maxsteps$interval <- format(maxsteps$interval, format = "%H:%M:%S")
+print(maxsteps)
+
+```
 
 
 
 ## Imputing missing values
+```{r, echo = TRUE}
+#First calculating the number of missing values
+print(sum(is.na(activity$steps)))
+#Imputing Variables: Choosing to go for the Median of intervals. Intervals more likely describe the average activity the person does at a given time.
+activityFull <- as.data.frame(activity)
+#Mediansteps by Interval
+mediansteps <- activity %>%
+  group_by(interval) %>%
+  summarise(median = median(steps, na.rm = TRUE))
+#Finding the missing indices, matching relevant interval
+mediansteps <- as.data.frame(mediansteps)
+activityFull <- merge(activityFull, mediansteps, by = "interval")
+#Calculate Empty na indices
+ind <- which(is.na(activityFull$steps))
+activityFull$steps[ind] <- activityFull$median[ind]
+activityFull <- activityFull[,-4]
+#Reodering Data
+activityFull <- activityFull %>%
+  arrange(date,interval)
 
+Summed2 <- activityFull %>%
+  group_by(date) %>%
+  summarise(total = sum(steps))
+ggplot(Summed2, aes(x = total)) + geom_histogram() + ggtitle("Distribution of Total Steps")
+meanSteps2 <- (mean(Summed2$total))
+medianSteps2 <- (median(Summed2$total))
+Finaltable2<- matrix(c("meansteps", "mediansteps", meanSteps2, medianSteps2), nrow = 2 , ncol = 2)
+print(Finaltable2)
+
+```
+###The median has remained the same, but the average has been lowered.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+```{r, echo = TRUE}
+CurrentLocale <- Sys.getlocale("LC_TIME")
+#Setting locale to english for readabiliy
+Sys.setlocale("LC_TIME", "en_US")
+
+summedWeek <- activityFull %>%
+  mutate(weekday = weekdays(date, abbreviate= TRUE))%>%
+  mutate(weekdays = ifelse(weekday == "Sat" | weekday == "Sun", "weekend", "weekday"))%>%
+  select(-weekday)%>%
+  mutate(weekdays = as.factor(weekdays))%>%
+  group_by(interval,weekdays)%>%
+  summarise(average = mean(steps))
+
+Sys.setlocale("LC_TIME", CurrentLocale)
+
+
+summedWeek$interval <- as.POSIXct(summedWeek$interval)
+
+ggplot(summedWeek, aes(x = interval, y = average))+ geom_line()+scale_x_datetime(breaks = "2 hours", date_labels = "%H:%M")+facet_grid(rows=vars(summedWeek$weekdays)) + labs(title = "Average steps per Weekday/Weekend", y = "Average Steps")
+
+```
